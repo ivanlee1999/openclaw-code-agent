@@ -116,8 +116,8 @@ function buildPendingInputState(
   };
 }
 
-/** Refresh window: refresh token if it expires within 30 minutes. */
-const TOKEN_REFRESH_WINDOW_MS = 30 * 60 * 1000; // 1_800_000
+/** Refresh window: refresh token if it expires within 2 hours. */
+const TOKEN_REFRESH_WINDOW_MS = 2 * 60 * 60 * 1000; // 7_200_000
 
 /** Timeout for the token refresh HTTP request. */
 const TOKEN_REFRESH_TIMEOUT_MS = 15_000;
