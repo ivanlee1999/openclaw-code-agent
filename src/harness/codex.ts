@@ -1,3 +1,4 @@
+// Pipeline Stage 3 fix applied 2026-03-25
 /**
  * Codex harness backed by the Codex App Server protocol over stdio.
  *
