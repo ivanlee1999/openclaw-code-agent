@@ -1,4 +1,3 @@
-// Event-driven pipeline v2 — verified 2026-03-25
 /**
  * Pipeline orchestration manager (event-driven).
  *
