@@ -112,6 +112,9 @@ export class Session extends EventEmitter {
   readonly goalTaskId?: string;
   private messageStream?: MessageStream;
 
+  // Pipeline notification control
+  readonly notificationsEnabled: boolean;
+
   // State
   private _status: SessionStatus = "starting";
   error?: string;
@@ -217,6 +220,7 @@ export class Session extends EventEmitter {
       this.worktreePrTargetRepo = config.worktreePrTargetRepo;
     }
     this.canUseTool = config.canUseTool;
+    this.notificationsEnabled = config.notificationsEnabled ?? true;
     this.startedAt = Date.now();
     this.abortController = new AbortController();
     this.turnRuntime = new SessionTurnRuntime({
@@ -505,6 +509,63 @@ export class Session extends EventEmitter {
     });
   }
 
+  /**
+   * Wait until the session has definitively started (`running`) or failed during startup.
+   *
+   * This closes the detached async gap between `spawn()` returning and the first
+   * harness event arriving. Callers that orchestrate sequential stages should
+   * await this before assuming the harness is alive.
+   */
+  waitForStartup(timeoutMs: number = STARTUP_TIMEOUT_MS): Promise<void> {
+    if (this._status === "running") {
+      return Promise.resolve();
+    }
+
+    if (this._status === "completed" || this._status === "failed" || this._status === "killed") {
+      return Promise.reject(new Error(
+        `Session ${this.id} ended during startup with status: ${this._status}${this.error ? ` — ${this.error}` : ""}`,
+      ));
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = (): void => {
+        this.removeListener("statusChange", onStatusChange);
+        clearTimeout(timer);
+      };
+
+      const settle = (fn: () => void): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        fn();
+      };
+
+      const onStatusChange = (_s: Session, newStatus: SessionStatus): void => {
+        if (newStatus === "running") {
+          settle(resolve);
+          return;
+        }
+
+        if (newStatus === "completed" || newStatus === "failed" || newStatus === "killed") {
+          settle(() => reject(new Error(
+            `Session ${this.id} ended during startup with status: ${newStatus}${this.error ? ` — ${this.error}` : ""}`,
+          )));
+        }
+      };
+
+      const timer = setTimeout(() => {
+        if (this._status === "starting") {
+          this.kill("startup-timeout");
+        }
+        settle(() => reject(new Error(`Session ${this.id} did not reach running state within ${timeoutMs}ms`)));
+      }, timeoutMs);
+
+      this.on("statusChange", onStatusChange);
+    });
+  }
+
   /** Send a follow-up user message to a running multi-turn session. */
   async sendMessage(text: string): Promise<void> {
     if (this._status !== "running") {
@@ -652,11 +713,12 @@ export class Session extends EventEmitter {
     this.clearAllTimers();
     if (!this.completedAt) this.completedAt = Date.now();
     if (this.messageStream) this.messageStream.end();
-    if (this.harnessHandle?.interrupt) {
-      void this.harnessHandle.interrupt().catch((err: unknown) => {
-        console.warn(`[Session ${this.id}] interrupt during teardown failed: ${errorMessage(err)}`);
-      });
-    }
+    // Abort the controller — this signals the SDK to stop cleanly.
+    // Do NOT call harnessHandle.interrupt() here: the Claude Code SDK writes
+    // to a socket synchronously inside interrupt(), and if the socket is already
+    // closed (e.g. single-turn completion), it emits an uncaught 'error' event
+    // on the socket that crashes the entire gateway process.
+    // The abort signal achieves the same cleanup without the dangerous socket write.
     this.abortController.abort();
     this.applyControlEvent({ type: "terminal.entered", suspended: this.lifecycle === "suspended" });
   }
@@ -700,6 +762,15 @@ export class Session extends EventEmitter {
         permissionMode: this.permissionMode,
         planModeApproved: this.planModeApproved,
         pendingInputState: this.pendingInputState,
+      });
+    }
+
+    // After the for-await loop (the stream has closed)
+    // If we're still active, the harness closed without a terminal result — force fail
+    if (this.isActive) {
+      console.warn(`[Session ${this.id}] Harness stream closed without terminal result. Forcing failed.`);
+      this.transitionToTerminal("failed", {
+        error: "Harness stream closed without terminal result",
       });
     }
   }
