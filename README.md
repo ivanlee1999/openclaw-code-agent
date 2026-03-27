@@ -58,7 +58,7 @@ For the current version-pinned breakdown, see [docs/ACP-COMPARISON.md](docs/ACP-
 - **Anti-cascade protection** — Orchestrator never launches new sessions from wake events
 - **Automatic cleanup** — Completed sessions are garbage-collected after a configurable TTL (`sessionGcAgeMinutes`, default 24h); IDs persist for resume
 - **Harness-agnostic architecture** — Pluggable `AgentHarness` interface allows adding new coding agent backends
-- Pipeline review now diffs all commits since pipeline start (not just HEAD~1)
+- Pipeline review now diffs all commits since pipeline start (not just HEAD~1).
 
 ---
 
