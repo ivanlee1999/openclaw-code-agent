@@ -4,6 +4,7 @@ import { makeAgentKillTool } from "./src/tools/agent-kill";
 import { makeAgentOutputTool } from "./src/tools/agent-output";
 import { makeAgentRespondTool } from "./src/tools/agent-respond";
 import { makeAgentStatsTool } from "./src/tools/agent-stats";
+import { makeAgentPipelineTool } from "./src/tools/agent-pipeline";
 import { registerAgentCommand } from "./src/commands/agent";
 import { registerAgentSessionsCommand } from "./src/commands/agent-sessions";
 import { registerAgentKillCommand } from "./src/commands/agent-kill";
@@ -12,7 +13,8 @@ import { registerAgentRespondCommand } from "./src/commands/agent-respond";
 import { registerAgentStatsCommand } from "./src/commands/agent-stats";
 import { registerAgentOutputCommand } from "./src/commands/agent-output";
 import { SessionManager } from "./src/session-manager";
-import { setSessionManager } from "./src/singletons";
+import { PipelineManager } from "./src/pipeline-manager";
+import { setSessionManager, setPipelineManager } from "./src/singletons";
 import { setPluginConfig, pluginConfig } from "./src/config";
 import type { OpenClawPluginToolContext, PluginConfig } from "./src/types";
 
@@ -59,6 +61,7 @@ export function register(api: OpenClawPluginApi): void {
   api.registerTool((ctx: OpenClawPluginToolContext) => makeAgentOutputTool(ctx), { optional: false });
   api.registerTool((ctx: OpenClawPluginToolContext) => makeAgentRespondTool(ctx), { optional: false });
   api.registerTool((ctx: OpenClawPluginToolContext) => makeAgentStatsTool(ctx), { optional: false });
+  api.registerTool((ctx: OpenClawPluginToolContext) => makeAgentPipelineTool(ctx), { optional: false });
 
   // Commands
   registerAgentCommand(api);
