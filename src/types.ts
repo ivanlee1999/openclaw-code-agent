@@ -306,10 +306,14 @@ export interface SessionConfig {
   worktreeBaseBranch?: string;
   /** Target repository for cross-repo PRs (e.g. 'openai/codex' for fork-to-upstream workflow). */
   worktreePrTargetRepo?: string;
+  /** @deprecated use worktreeStrategy. Legacy boolean: true = use worktree isolation. */
+  worktree?: boolean;
   /** Optional tool-intercept callback (CC sessions only). Used for AskUserQuestion intercept. */
   canUseTool?: CanUseToolCallback;
   /** Explicit backend ref when reconstructing a persisted session against a native backend conversation. */
   backendRef?: SessionBackendRef;
+  /** If false, suppress notifications for this session (e.g. pipeline sub-stages). */
+  notificationsEnabled?: boolean;
 }
 
 /** Plan-approval policy for orchestrator wake flows. */
