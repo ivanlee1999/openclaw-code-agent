@@ -173,6 +173,10 @@ export function register(api: OpenClawPluginApi): void {
       // A1: Cleanup orphaned worktrees at startup (needs sm for per-repo workdir scan)
       cleanupOrphanedWorktrees(sm);
 
+      const pm = new PipelineManager();
+      setPipelineManager(pm);
+      pm.resumePipelines();
+
       cleanupInterval = setInterval(() => sm!.cleanup(), 5 * 60 * 1000);
       cleanupInterval.unref?.();
     },
