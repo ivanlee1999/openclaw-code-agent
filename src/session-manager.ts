@@ -165,7 +165,40 @@ export class SessionManager {
       }
     }
 
-    const session = new Session({ ...config, workdir: actualWorkdir }, name);
+    // Inject worktree-aware system prompt so the agent commits to the correct branch.
+    // Without this, Claude may follow Codex's plan to use the original workdir path
+    // and commit to main instead of the worktree branch.
+    let effectiveSystemPrompt = config.systemPrompt;
+    if (worktreePath) {
+      const branchName = (() => {
+        try {
+          const { execFileSync } = require("child_process");
+          return execFileSync("git", ["-C", worktreePath, "rev-parse", "--abbrev-ref", "HEAD"], {
+            encoding: "utf-8", timeout: 5_000, stdio: ["pipe", "pipe", "pipe"],
+          }).trim() || undefined;
+        } catch { return undefined; }
+      })();
+      if (branchName) {
+        const worktreeSuffix = [
+          ``,
+          `You are working in a git worktree.`,
+          `Worktree path: ${worktreePath}`,
+          `Branch: ${branchName}`,
+          ``,
+          `IMPORTANT: ALL file edits must be made within this worktree at ${worktreePath}.`,
+          `Do NOT edit files directly in ${config.workdir} (the original workspace).`,
+          `If your task references files by absolute path under ${config.workdir}, rewrite those`,
+          `paths relative to your current working directory. For example:`,
+          `  "${config.workdir}/src/file.py"  →  use relative path "src/file.py"`,
+          ``,
+          `Commit all your file changes to this branch before finishing.`,
+          `Use \`git add\` and \`git commit\`. Do NOT run \`git checkout\`, \`git switch\`, or \`git reset --hard\` as these will detach or corrupt the worktree HEAD.`,
+        ].join("\n");
+        effectiveSystemPrompt = (config.systemPrompt ?? "") + worktreeSuffix;
+      }
+    }
+
+    const session = new Session({ ...config, workdir: actualWorkdir, systemPrompt: effectiveSystemPrompt }, name);
     if (worktreePath) {
       session.worktreePath = worktreePath;
       session.originalWorkdir = config.workdir;
