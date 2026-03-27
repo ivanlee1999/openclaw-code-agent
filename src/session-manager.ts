@@ -390,6 +390,28 @@ export class SessionManager {
   private triggerAgentEvent(session: Session): void {
     const preview = this.getOutputPreview(session);
 
+    const worktreeLines = session.worktreePath && session.originalWorkdir
+      ? [
+          ``,
+          `This session used a git worktree:`,
+          `  Branch:   agent/${session.name}`,
+          `  Worktree: ${session.worktreePath}`,
+          `  Repo:     ${session.originalWorkdir}`,
+          ``,
+          `[WORKTREE DECISION REQUIRED] The branch has commits that need to be merged or turned into a PR.`,
+          `Run the following to see what changed:`,
+          `  git -C ${JSON.stringify(session.originalWorkdir)} log --oneline main..agent/${session.name}`,
+          `  git -C ${JSON.stringify(session.originalWorkdir)} diff main..agent/${session.name} --stat`,
+          ``,
+          `Then tell the user what changed and ask them to choose:`,
+          `  1. Merge locally:  agent_merge(session="${session.name}")`,
+          `  2. Open a PR:      agent_pr(session="${session.name}")`,
+          `  3. Discard:        agent_worktree_cleanup(session="${session.name}")`,
+          ``,
+          `Wait for their reply before acting.`,
+        ]
+      : [];
+
     const eventText = [
       `Coding agent session completed.`,
       `Name: ${session.name} | ID: ${session.id}`,
@@ -398,11 +420,13 @@ export class SessionManager {
       ``,
       `Output preview:`,
       preview,
+      ...worktreeLines,
       ``,
       `[ACTION REQUIRED] Follow your autonomy rules for session completion:`,
       `1. Use agent_output(session='${session.id}', full=true) to read the full result.`,
-      `2. If this is part of a multi-phase pipeline, launch the next phase NOW — do not wait for user input.`,
-      `3. Notify the user with a summary of what was done.`,
+      `2. If this session had a worktree (see above), summarize the diff for the user and ask them to choose merge/PR/discard.`,
+      `3. If this is part of a multi-phase pipeline, launch the next phase NOW — do not wait for user input.`,
+      `4. Notify the user with a summary of what was done.`,
     ].join("\n");
 
     const costStr = `$${(session.costUsd ?? 0).toFixed(2)}`;
