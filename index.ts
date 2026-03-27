@@ -82,6 +82,10 @@ export function register(api: OpenClawPluginApi): void {
       sm = new SessionManager(pluginConfig.maxSessions, pluginConfig.maxPersistedSessions);
       setSessionManager(sm);
 
+      const pm = new PipelineManager();
+      setPipelineManager(pm);
+      pm.resumePipelines();
+
       cleanupInterval = setInterval(() => sm!.cleanup(), 5 * 60 * 1000);
     },
     stop: () => {
