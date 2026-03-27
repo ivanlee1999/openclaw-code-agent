@@ -610,13 +610,23 @@ export class PipelineManager {
             const issueList = verdict.criticalIssues.length > 0
               ? verdict.criticalIssues.join("\n- ")
               : verdict.summary || "No specific issues listed";
+
+            // Grab Claude's last fix attempt output so the human can see what was tried
+            const lastFixOutput = iteration > 0
+              ? this.findCompletedStageOutput(run, "claude-fix", iteration)
+              : this.findCompletedStageOutput(run, "claude-implement", 0);
+            const claudeSummary = lastFixOutput
+              ? `\n\n**What Claude tried (last fix):**\n${lastFixOutput.split("\n").slice(0, 15).join("\n")}`
+              : "";
+
             this.finalizePipeline(
               run,
               "blocked",
               `Max fix iterations (${run.maxIterations}) reached — needs human judgment.\n\n` +
               `**Codex review summary:** ${verdict.summary || "(no summary)"}\n\n` +
-              `**Remaining issues:**\n- ${issueList}\n\n` +
-              `Reply with instructions to redirect the fix approach, or approve to ship as-is.`
+              `**Remaining issues:**\n- ${issueList}` +
+              claudeSummary +
+              `\n\nReply with instructions to redirect the fix approach, or approve to ship as-is.`
             );
             return;
           }
