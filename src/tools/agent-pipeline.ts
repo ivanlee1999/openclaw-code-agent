@@ -75,7 +75,7 @@ export function makeAgentPipelineTool(ctx: OpenClawPluginToolContext) {
       }
 
       try {
-        const run = pipelineManager.start({
+        const run = pipelineManager.launch({
           prompt: params.prompt,
           workdir: params.workdir,
           name: params.name,
