@@ -319,7 +319,7 @@ export class PipelineManager {
    * Find the output of a completed stage by kind and iteration.
    */
   private findCompletedStageOutput(run: PipelineRun, kind: PipelineStageKind, iteration: number): string | undefined {
-    const stage = run.stages.find(s => s.kind === kind && s.iteration === iteration && s.status === "completed");
+    const stage = run.stages.find((s: PipelineStageRecord) => s.kind === kind && s.iteration === iteration && s.status === "completed");
     return stage?.output;
   }
 
@@ -448,7 +448,7 @@ export class PipelineManager {
       name: `${run.name}-${spec.kind}${spec.iteration > 0 ? `-${spec.iteration}` : ""}`,
       harness: spec.harness,
       multiTurn: false,
-      worktree: false,
+      worktreeStrategy: "off",
       permissionMode: "bypassPermissions",
       codexApprovalPolicy: spec.harness === "codex" ? "never" : undefined,
       reasoningEffort: resolveReasoningEffortForHarness(spec.harness),
@@ -607,7 +607,17 @@ export class PipelineManager {
 
           // verdict === "critical"
           if (iteration >= run.maxIterations - 1) {
-            this.finalizePipeline(run, "failed", `Max fix iterations (${run.maxIterations}) reached. Remaining issues: ${verdict.criticalIssues.join(", ")}`);
+            const issueList = verdict.criticalIssues.length > 0
+              ? verdict.criticalIssues.join("\n- ")
+              : verdict.summary || "No specific issues listed";
+            this.finalizePipeline(
+              run,
+              "blocked",
+              `Max fix iterations (${run.maxIterations}) reached — needs human judgment.\n\n` +
+              `**Codex review summary:** ${verdict.summary || "(no summary)"}\n\n` +
+              `**Remaining issues:**\n- ${issueList}\n\n` +
+              `Reply with instructions to redirect the fix approach, or approve to ship as-is.`
+            );
             return;
           }
 

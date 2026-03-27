@@ -26,6 +26,7 @@ export type KillReason = "user" | "idle-timeout" | "startup-timeout" | "shutdown
 
 /** Unified permission modes exposed by tools/commands across harnesses. */
 export type PermissionMode = "default" | "plan" | "acceptEdits" | "bypassPermissions";
+export type WorktreeStrategy = "off" | "manual" | "ask" | "delegate" | "auto-merge" | "auto-pr";
 export type CodexApprovalPolicy = "never" | "on-request";
 export type ReasoningEffort = "low" | "medium" | "high";
 
@@ -36,6 +37,12 @@ export interface HarnessConfig {
   reasoningEffort?: ReasoningEffort;
   approvalPolicy?: CodexApprovalPolicy;
 }
+
+/** Tool-intercept callback type for harnesses that support it. */
+export type CanUseToolCallback = (
+  toolName: string,
+  input: Record<string, unknown>,
+) => Promise<{ behavior: "allow"; updatedInput: Record<string, unknown> }>;
 
 /** Session creation options used by SessionManager.spawn(). */
 export interface SessionConfig {
@@ -54,12 +61,26 @@ export interface SessionConfig {
   permissionMode?: PermissionMode;
   codexApprovalPolicy?: CodexApprovalPolicy;
   resumeSessionId?: string;
+  /** Original requested session ID for worktree inheritance, independent of harness thread resume.
+   * Set even when resumeSessionId is cleared (e.g. Codex harness), so the D1 block can still
+   * inherit the persisted worktree context. */
+  resumeWorktreeFrom?: string;
   forkSession?: boolean;
   multiTurn?: boolean;
   /** Agent harness to use (e.g. "claude-code"). Defaults to the built-in default. */
   harness?: string;
-  /** Control git worktree behavior. true=auto-create, false=skip, undefined=auto-detect. */
+  /** Worktree merge-back strategy. undefined or "off" = no worktree. */
+  worktreeStrategy?: WorktreeStrategy;
+  /** Base branch for worktree merge/PR operations. */
+  worktreeBaseBranch?: string;
+  /** @deprecated use worktreeStrategy. Legacy boolean: true = use worktree isolation. */
   worktree?: boolean;
+  /** Output mode: "deliverable" sends 📄 Deliverable ready instead of ✅ Completed. */
+  outputMode?: "deliverable";
+  /** Optional tool-intercept callback (CC sessions only). Used for AskUserQuestion intercept. */
+  canUseTool?: CanUseToolCallback;
+  /** If false, suppress notifications for this session (e.g. pipeline sub-stages). */
+  notificationsEnabled?: boolean;
 }
 
 /** Plan-approval policy for orchestrator wake flows. */
@@ -80,6 +101,10 @@ export interface PluginConfig {
   planApproval: PlanApprovalMode;
   defaultHarness?: string;
   harnesses: Record<string, HarnessConfig>;
+  /** Default worktree strategy for new sessions when agent_launch omits worktree_strategy. */
+  defaultWorktreeStrategy?: WorktreeStrategy;
+  /** Override base directory for agent worktrees. Defaults to <repoRoot>/.worktrees when unset. */
+  worktreeDir?: string;
   /**
    * Deprecated global allowed-model fallback preserved during migration from the
    * pre-harness config shape. Matching remains case-insensitive substring-based.
@@ -106,6 +131,10 @@ export interface RawPluginConfig {
   defaultHarness?: string;
   allowedModels?: string[];
   harnesses?: Record<string, HarnessConfig>;
+  /** Default worktree strategy for new sessions. */
+  defaultWorktreeStrategy?: WorktreeStrategy;
+  /** Override base directory for agent worktrees. Defaults to <repoRoot>/.worktrees when unset. */
+  worktreeDir?: string;
 }
 
 /** Persisted session metadata retained for resume/list/output after GC/restart. */
@@ -132,6 +161,22 @@ export interface PersistedSessionInfo {
   codexApprovalPolicy?: CodexApprovalPolicy;
   /** Path to the worktree if one was created. */
   worktreePath?: string;
+  /** Branch name of the worktree. */
+  worktreeBranch?: string;
+  /** Worktree strategy used for this session. */
+  worktreeStrategy?: WorktreeStrategy;
+  /** Whether the worktree was merged back to the base branch. */
+  worktreeMerged?: boolean;
+  /** Timestamp when the worktree was merged. */
+  worktreeMergedAt?: string;
+  /** PR URL if a PR was created for this worktree. */
+  worktreePrUrl?: string;
+  /** PR number for commenting and state checks. */
+  worktreePrNumber?: number;
+  /** ISO timestamp set when "ask" or "delegate" fires and decision is pending. Cleared on merge or PR. */
+  pendingWorktreeDecisionSince?: string;
+  /** ISO timestamp of last stale-branch reminder sent. */
+  lastWorktreeReminderAt?: string;
 }
 
 /** In-memory usage metrics shown by `agent_stats`. */
