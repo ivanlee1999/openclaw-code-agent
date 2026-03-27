@@ -23,6 +23,7 @@ import {
   resolveReasoningEffortForHarness,
 } from "./config";
 import { isGitRepoWithRemote, createWorktree, removeWorktree } from "./worktree";
+import { execFileSync } from "child_process";
 import { generateSessionName } from "./format";
 import type { SessionConfig, SessionStatus } from "./types";
 import type {
@@ -73,9 +74,12 @@ function claudeImplementPrompt(planOutput: string, task: string): string {
   ].join("\n");
 }
 
-function codexReviewPrompt(): string {
+function codexReviewPrompt(baseSha?: string): string {
+  const diffCmd = baseSha
+    ? `git log ${baseSha}..HEAD --oneline` + " to see all commits, then `git diff " + baseSha + "` to review all changes"
+    : "git diff HEAD~1";
   return [
-    "Review the code changes just made. Run `git diff HEAD~1`.",
+    `Review the code changes just made. Run \`${diffCmd}\`.`,
     "",
     "Check for: bugs, edge cases, security, performance, code quality.",
     "",
@@ -376,6 +380,19 @@ export class PipelineManager {
       }
     }
 
+    // Capture the HEAD SHA of the worktree at pipeline start.
+    // Review stages use this to diff ALL commits, not just HEAD~1.
+    let baseSha: string | undefined;
+    try {
+      const dir = worktreePath ?? actualWorkdir;
+      baseSha = execFileSync("git", ["-C", dir, "rev-parse", "HEAD"], {
+        encoding: "utf-8", timeout: 5_000, stdio: ["pipe", "pipe", "pipe"],
+      }).trim() || undefined;
+      if (baseSha) pipelineLog(`Pipeline base SHA: ${baseSha}`);
+    } catch {
+      // best-effort; review falls back to HEAD~1
+    }
+
     const run: PipelineRun = {
       id,
       name,
@@ -383,6 +400,7 @@ export class PipelineManager {
       workdir: actualWorkdir,
       worktreePath,
       originalWorkdir,
+      baseSha,
       maxIterations,
       status: "starting",
       stages: [],
@@ -580,7 +598,7 @@ export class PipelineManager {
           this.spawnStage(run, {
             kind: "codex-review",
             harness: "codex",
-            prompt: codexReviewPrompt(),
+            prompt: codexReviewPrompt(run.baseSha),
             iteration: 0,
           });
           break;
@@ -649,7 +667,7 @@ export class PipelineManager {
           this.spawnStage(run, {
             kind: "codex-review",
             harness: "codex",
-            prompt: codexReviewPrompt(),
+            prompt: codexReviewPrompt(run.baseSha),
             iteration,
           });
           break;

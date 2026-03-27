@@ -51,4 +51,6 @@ export interface PipelineRun {
   originThreadId?: string | number;
   originAgentId?: string;
   originSessionKey?: string;
+  /** Git SHA at the point the pipeline worktree was created. Used by review stages to diff all changes. */
+  baseSha?: string;
 }
