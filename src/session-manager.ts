@@ -153,7 +153,8 @@ export class SessionManager {
     // Worktree auto-creation: create a git worktree so the main checkout stays clean.
     let actualWorkdir = config.workdir;
     let worktreePath: string | undefined;
-    const shouldWorktree = config.worktree !== false; // default true unless explicitly false
+    // worktreeStrategy: "off" (new API) or worktree: false (legacy) both disable worktree creation
+    const shouldWorktree = config.worktree !== false && config.worktreeStrategy !== "off";
     if (shouldWorktree && isGitRepoWithRemote(config.workdir)) {
       try {
         worktreePath = createWorktree(config.workdir, name);
