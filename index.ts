@@ -17,6 +17,7 @@ import { makeAgentWorktreeStatusTool } from "./src/tools/agent-worktree-status";
 import { makeGoalLaunchTool } from "./src/tools/goal-launch";
 import { makeGoalStatusTool } from "./src/tools/goal-status";
 import { makeGoalStopTool } from "./src/tools/goal-stop";
+import { makeAgentPipelineTool } from "./src/tools/agent-pipeline";
 import { createCallbackHandler } from "./src/callback-handler";
 import { registerAgentCommand } from "./src/commands/agent";
 import { registerAgentSessionsCommand } from "./src/commands/agent-sessions";
@@ -29,7 +30,8 @@ import { registerGoalStatusCommand } from "./src/commands/goal-status";
 import { registerGoalStopCommand } from "./src/commands/goal-stop";
 import { GoalController } from "./src/goal-controller";
 import { SessionManager } from "./src/session-manager";
-import { setGoalController, setSessionManager } from "./src/singletons";
+import { PipelineManager } from "./src/pipeline-manager";
+import { setGoalController, setSessionManager, setPipelineManager } from "./src/singletons";
 import { setPluginRuntime } from "./src/runtime-store";
 import { setPluginConfig, pluginConfig } from "./src/config";
 import { definePluginEntry, type OpenClawPluginApi, type OpenClawPluginToolContext } from "./api";
@@ -137,6 +139,7 @@ export function register(api: OpenClawPluginApi): void {
   registerTool((ctx: OpenClawPluginToolContext) => makeGoalLaunchTool(ctx), { optional: false });
   registerTool((ctx: OpenClawPluginToolContext) => makeGoalStatusTool(ctx), { optional: false });
   registerTool((ctx: OpenClawPluginToolContext) => makeGoalStopTool(ctx), { optional: false });
+  registerTool((ctx: OpenClawPluginToolContext) => makeAgentPipelineTool(ctx), { optional: false });
 
   // Interactive handlers (shared action-token callbacks across chat transports)
   api.registerInteractiveHandler(createCallbackHandler("telegram"));

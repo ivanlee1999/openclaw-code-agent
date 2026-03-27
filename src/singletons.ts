@@ -13,3 +13,12 @@ export function setSessionManager(sm: SessionManager | null): void {
 export function setGoalController(controller: GoalController | null): void {
   goalController = controller;
 }
+
+import type { PipelineManager } from "./pipeline-manager";
+
+export let pipelineManager: PipelineManager | null = null;
+
+/** Replace the shared PipelineManager reference used by the agent_pipeline tool. */
+export function setPipelineManager(pm: PipelineManager | null): void {
+  pipelineManager = pm;
+}
