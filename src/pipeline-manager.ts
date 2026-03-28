@@ -68,7 +68,7 @@ function claudeImplementPrompt(planOutput: string, task: string): string {
     "",
     `Original task: ${task}`,
     "",
-    "After implementing, create a git commit.",
+    "After implementing, verify your changes work correctly.",
     "",
     NO_QUESTIONS,
   ].join("\n");
@@ -104,7 +104,7 @@ function claudeFixPrompt(reviewOutput: string): string {
     "",
     reviewOutput,
     "",
-    "Fix ONLY the critical issues. Create a git commit.",
+    "Fix ONLY the critical issues. Verify your changes work correctly.",
     "",
     NO_QUESTIONS,
   ].join("\n");
@@ -576,6 +576,60 @@ export class PipelineManager {
   }
 
   /**
+   * Hardcoded git commit step — runs programmatically, not via agent prompt.
+   * Ensures all changes from Claude are committed before the review stage.
+   * Returns the commit SHA, or undefined if nothing to commit.
+   */
+  private ensureCommitted(run: PipelineRun, stageLabel: string): string | undefined {
+    try {
+      // Stage any unstaged/untracked changes
+      execSync("git add -A", {
+        cwd: run.workdir, encoding: "utf-8", timeout: 10_000,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      // Check if there's anything to commit
+      const status = execSync("git status --porcelain", {
+        cwd: run.workdir, encoding: "utf-8", timeout: 5_000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+
+      if (!status) {
+        // Check if agent already committed (diff between baseSha and HEAD)
+        const headSha = execSync("git rev-parse HEAD", {
+          cwd: run.workdir, encoding: "utf-8", timeout: 5_000,
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
+        if (run.baseSha && headSha !== run.baseSha) {
+          pipelineLog(`ensureCommitted(${stageLabel}): agent already committed (HEAD=${headSha.slice(0, 8)})`);
+          return headSha;
+        }
+        pipelineLog(`ensureCommitted(${stageLabel}): nothing to commit and no new commits`);
+        return undefined;
+      }
+
+      // Commit with a descriptive message
+      const sha = execSync(
+        `git commit -m "pipeline(${run.name}): ${stageLabel}"`,
+        { cwd: run.workdir, encoding: "utf-8", timeout: 10_000, stdio: ["pipe", "pipe", "pipe"] },
+      ).trim();
+
+      const commitSha = execSync("git rev-parse HEAD", {
+        cwd: run.workdir, encoding: "utf-8", timeout: 5_000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+
+      pipelineLog(`ensureCommitted(${stageLabel}): committed ${commitSha.slice(0, 8)}`);
+      return commitSha;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      pipelineLog(`ensureCommitted(${stageLabel}): failed — ${msg}`);
+      // Non-fatal: review can still try to diff whatever is there
+      return undefined;
+    }
+  }
+
+  /**
    * Called when a stage completes successfully. Determines and spawns the next stage.
    */
   private onStageCompleted(
@@ -599,6 +653,8 @@ export class PipelineManager {
         }
 
         case "claude-implement": {
+          // Hardcoded step: ensure all changes are committed before review
+          this.ensureCommitted(run, "implement");
           this.sendStatus(run, `✅ Implementation complete. Launching Codex review...`);
           this.sendStatus(run, `🔍 Stage 3/3: Codex reviewing changes...`);
           this.spawnStage(run, {
@@ -668,6 +724,8 @@ export class PipelineManager {
         }
 
         case "claude-fix": {
+          // Hardcoded step: ensure fix changes are committed before re-review
+          this.ensureCommitted(run, `fix-round-${iteration}`);
           this.sendStatus(run, `✅ Fix round ${iteration} complete. Re-reviewing...`);
           this.sendStatus(run, `🔍 Re-review: Codex checking fixes...`);
           this.spawnStage(run, {
