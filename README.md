@@ -460,3 +460,11 @@ Contributions are welcome! Please:
 MIT — see [LICENSE](LICENSE) for details.
 
 Originally based on [alizarion/openclaw-claude-code-plugin](https://github.com/alizarion/openclaw-claude-code-plugin). Renamed to `openclaw-code-agent` to be harness-agnostic.
+
+## Pipeline Architecture
+
+The pipeline runs in three stages: plan → implement → review.
+Plan defines the task, constraints, and intended changes before execution.
+Implement applies the approved changes in the target workspace.
+Review verifies the result, checks for regressions, and summarizes outcomes.
+This keeps execution structured, traceable, and safe for iterative work.
