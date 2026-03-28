@@ -76,10 +76,16 @@ function claudeImplementPrompt(planOutput: string, task: string): string {
 
 function codexReviewPrompt(baseSha?: string): string {
   const diffCmd = baseSha
-    ? `git log ${baseSha}..HEAD --oneline` + " to see all commits, then `git diff " + baseSha + "` to review all changes"
+    ? `git diff ${baseSha}`
     : "git diff HEAD~1";
   return [
-    `Review the code changes just made. Run \`${diffCmd}\`.`,
+    "Review the code changes just made.",
+    "",
+    "First, check what commits exist:",
+    baseSha ? `Run \`git log ${baseSha}..HEAD --oneline\` to see commits since the pipeline started.` : "",
+    `If there are commits, run \`${diffCmd}\` to see all changes.`,
+    "If no commits are found, run \`git diff\` to check for unstaged changes, and \`git stash list\` for stashed work.",
+    "If there are truly no changes at all, report that in your verdict summary.",
     "",
     "Check for: bugs, edge cases, security, performance, code quality.",
     "",
