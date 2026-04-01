@@ -86,6 +86,16 @@ export function isGitRepo(dir: string): boolean {
   }
 }
 
+export function isGitRepoWithRemote(dir: string): boolean {
+  if (!isGitRepo(dir)) return false;
+  try {
+    const remote = execFileSync("git", ["remote"], { cwd: dir, timeout: 5_000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    return remote.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function hasEnoughWorktreeSpace(): boolean {
   try {
     const baseDir = getWorktreeBaseDir();

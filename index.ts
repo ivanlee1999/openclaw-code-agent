@@ -159,7 +159,7 @@ export function register(api: OpenClawPluginApi): void {
   // Service
   api.registerService({
     id: "openclaw-code-agent",
-    start: (ctx) => {
+    start: (ctx: unknown) => {
       const config = api.pluginConfig ?? {};
       setPluginConfig(config);
       setPluginRuntime(api.runtime);

@@ -82,7 +82,7 @@ export function makeAgentPipelineTool(ctx: OpenClawPluginToolContext) {
           worktree: params.worktree,
           maxIterations: params.max_iterations,
           originChannel: ctx.channel || undefined,
-          originThreadId: ctx.threadId || undefined,
+          originThreadId: ctx.messageThreadId || undefined,
           originAgentId: ctx.agentId || undefined,
           originSessionKey: ctx.sessionKey || undefined,
         });
