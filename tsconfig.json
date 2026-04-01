@@ -5,7 +5,7 @@
     "moduleResolution": "Bundler",
     "baseUrl": ".",
     "paths": {
-      "openclaw/plugin-sdk/*": ["../openclaw/src/plugin-sdk/*"]
+      "openclaw/plugin-sdk/*": ["./typings/plugin-sdk/*"]
     },
     "lib": ["ES2022"],
     "strict": false,
