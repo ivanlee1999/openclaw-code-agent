@@ -39,7 +39,7 @@ const TERMINAL_STATUSES = new Set<SessionStatus>(["completed", "failed", "killed
 const PIPELINE_STATE_DIR = path.join(os.homedir(), ".openclaw", "pipeline-state");
 
 /** Per-stage timeout in ms. */
-const STAGE_TIMEOUT_MS = 600_000;
+const STAGE_TIMEOUT_MS = 1_200_000;
 
 // -- Stage prompt templates --
 
