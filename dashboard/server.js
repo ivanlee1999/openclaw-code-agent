@@ -111,6 +111,82 @@ app.get("/api/pipelines", (req, res) => {
   res.json(data || []);
 });
 
+app.get("/api/sessions/:id/checkpoints", (req, res) => {
+  const sessionId = req.params.id;
+  try {
+    const { execFileSync } = require("child_process");
+
+    // Find the workdir for this session from the pipeline state or DB
+    let workdir;
+    const data = withDb((db) => {
+      // Try pipeline_runs first
+      const pipeline = db
+        .prepare("SELECT workdir FROM pipeline_runs WHERE id = ?")
+        .get(sessionId);
+      if (pipeline) return pipeline.workdir;
+
+      // Try sessions
+      const session = db
+        .prepare("SELECT workdir FROM sessions WHERE id = ?")
+        .get(sessionId);
+      return session ? session.workdir : null;
+    });
+
+    workdir = data;
+
+    if (!workdir) {
+      return res.json([]);
+    }
+
+    // List checkpoint tags for this session
+    const pattern = `checkpoint/${sessionId}/*`;
+    let output;
+    try {
+      output = execFileSync("git", ["-C", workdir, "tag", "--list", pattern], {
+        timeout: 5000,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+    } catch {
+      return res.json([]);
+    }
+
+    if (!output) return res.json([]);
+
+    const checkpoints = output
+      .split("\n")
+      .filter(Boolean)
+      .map((tag) => {
+        const parts = tag.split("/");
+        if (parts.length !== 3) return null;
+        const rest = parts[2];
+        const dashIdx = rest.indexOf("-");
+        const timestamp = parseInt(dashIdx > 0 ? rest.slice(0, dashIdx) : rest, 10);
+        const label = dashIdx > 0 ? rest.slice(dashIdx + 1) : undefined;
+
+        let sha;
+        try {
+          sha = execFileSync("git", ["-C", workdir, "rev-parse", tag], {
+            timeout: 5000,
+            encoding: "utf-8",
+            stdio: ["pipe", "pipe", "pipe"],
+          }).trim();
+        } catch {
+          sha = "unknown";
+        }
+
+        return { tag, sessionId, timestamp, label, sha };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    res.json(checkpoints);
+  } catch (err) {
+    console.error("Checkpoint list error:", err.message);
+    res.json([]);
+  }
+});
+
 app.get("/api/stats", (_req, res) => {
   const data = withDb((db) => {
     const totalSessions = db

@@ -22,9 +22,11 @@ import {
   pluginConfig,
   resolveReasoningEffortForHarness,
 } from "./config";
-import { isGitRepoWithRemote, createWorktree, removeWorktree } from "./worktree";
+import { isGitRepoWithRemote, createWorktree, removeWorktree, getBranchName as getBranchNameFromWorktree } from "./worktree";
 import { execFileSync } from "child_process";
 import { generateSessionName } from "./format";
+import { inferBranchName, renameBranch } from "./branch-naming";
+import { CheckpointManager } from "./checkpoints";
 import type { SessionConfig, SessionStatus } from "./types";
 import type {
   PipelineRun,
@@ -188,6 +190,8 @@ export class PipelineManager {
   private runs: Map<string, PipelineRun> = new Map();
   /** Map from pipeline ID to the currently active stage (for timeout cleanup). */
   private activeStages: Map<string, ActiveStage> = new Map();
+  /** Checkpoint manager for creating save points during pipeline execution. */
+  private checkpointMgr = new CheckpointManager();
 
   // -- Persistence helpers --
 
@@ -643,6 +647,12 @@ export class PipelineManager {
     try {
       switch (kind) {
         case "codex-plan": {
+          // Smart branch renaming: infer a descriptive name from the plan
+          this.tryRenameBranch(run, output);
+
+          // Auto-checkpoint after plan (before implement)
+          this.autoCheckpoint(run, "after-plan");
+
           this.sendStatus(run, `✅ Codex plan complete. Launching Claude Code implementation...`);
           this.sendStatus(run, `🔨 Stage 2/3: Claude Code implementing...`);
           this.spawnStage(run, {
@@ -657,6 +667,10 @@ export class PipelineManager {
         case "claude-implement": {
           // Hardcoded step: ensure all changes are committed before review
           this.ensureCommitted(run, "implement");
+
+          // Auto-checkpoint after implement (before review)
+          this.autoCheckpoint(run, "after-implement");
+
           this.sendStatus(run, `✅ Implementation complete. Launching Codex review...`);
           this.sendStatus(run, `🔍 Stage 3/3: Codex reviewing changes...`);
           this.spawnStage(run, {
@@ -728,6 +742,10 @@ export class PipelineManager {
         case "claude-fix": {
           // Hardcoded step: ensure fix changes are committed before re-review
           this.ensureCommitted(run, `fix-round-${iteration}`);
+
+          // Auto-checkpoint after each fix round
+          this.autoCheckpoint(run, `after-fix-${iteration}`);
+
           this.sendStatus(run, `✅ Fix round ${iteration} complete. Re-reviewing...`);
           this.sendStatus(run, `🔍 Re-review: Codex checking fixes...`);
           this.spawnStage(run, {
@@ -742,6 +760,48 @@ export class PipelineManager {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.finalizePipeline(run, "failed", `Failed to spawn next stage after ${kind}: ${msg}`);
+    }
+  }
+
+  /**
+   * Attempt to rename the worktree branch to a descriptive name inferred from the plan.
+   * Format: `feat/<short-description>` or `fix/<short-description>`.
+   */
+  private tryRenameBranch(run: PipelineRun, planOutput: string): void {
+    if (!run.worktreePath) return;
+
+    try {
+      const currentBranch = getBranchNameFromWorktree(run.worktreePath);
+      if (!currentBranch) return;
+
+      const newBranch = inferBranchName(planOutput);
+      if (!newBranch || newBranch === currentBranch) return;
+
+      const success = renameBranch(run.worktreePath, currentBranch, newBranch);
+      if (success) {
+        pipelineLog(`Branch renamed: ${currentBranch} → ${newBranch}`);
+        run.renamedBranch = newBranch;
+        run.originalBranch = currentBranch;
+        this.persistState(run);
+      }
+    } catch (err) {
+      // Non-fatal: keep the original branch name
+      pipelineLog(`WARN: Branch rename failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /**
+   * Create an auto-checkpoint at the current HEAD for the pipeline.
+   */
+  private autoCheckpoint(run: PipelineRun, label: string): void {
+    try {
+      const cp = this.checkpointMgr.createCheckpoint(run.workdir, run.id, label);
+      if (cp) {
+        pipelineLog(`Checkpoint created: ${cp.tag} (${cp.sha.slice(0, 8)})`);
+      }
+    } catch (err) {
+      // Non-fatal
+      pipelineLog(`WARN: Checkpoint creation failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

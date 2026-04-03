@@ -55,4 +55,8 @@ export interface PipelineRun {
   baseSha?: string;
   /** Multi-repo connection ID. When set, the pipeline uses a shared connection workspace. */
   connectionId?: string;
+  /** The descriptive branch name after smart rename (e.g. `feat/add-user-auth`). */
+  renamedBranch?: string;
+  /** The original branch name before smart rename (e.g. `agent/pipeline-fix-auth-1234`). */
+  originalBranch?: string;
 }
