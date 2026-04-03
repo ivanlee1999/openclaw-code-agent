@@ -59,4 +59,6 @@ export interface PipelineRun {
   renamedBranch?: string;
   /** The original branch name before smart rename (e.g. `agent/pipeline-fix-auth-1234`). */
   originalBranch?: string;
+  /** Taskr task IDs for real-time pipeline visibility. */
+  taskrTaskIds?: import("./taskr-integration").TaskrTaskIds;
 }

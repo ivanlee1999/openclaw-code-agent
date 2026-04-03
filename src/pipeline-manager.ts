@@ -34,6 +34,7 @@ import type {
   PipelineStageRecord,
   ReviewVerdict,
 } from "./pipeline-types";
+import { TaskrClient } from "./taskr-integration";
 
 const TERMINAL_STATUSES = new Set<SessionStatus>(["completed", "failed", "killed"]);
 
@@ -192,6 +193,8 @@ export class PipelineManager {
   private activeStages: Map<string, ActiveStage> = new Map();
   /** Checkpoint manager for creating save points during pipeline execution. */
   private checkpointMgr = new CheckpointManager();
+  /** Taskr client for real-time pipeline visibility. */
+  private taskr = new TaskrClient();
 
   // -- Persistence helpers --
 
@@ -432,6 +435,16 @@ export class PipelineManager {
     this.sendStatus(run, `🔧 Pipeline started: ${name}`);
     this.sendStatus(run, `📋 Stage 1/3: Codex analyzing and planning...`);
 
+    // Create Taskr task list for real-time visibility (fire-and-forget)
+    this.taskr.createPipelineTaskList(name, run.prompt).then((ids) => {
+      run.taskrTaskIds = ids;
+      this.persistState(run);
+      // Mark the plan stage as in-progress
+      if (ids.plan) {
+        this.taskr.updateStageStatus(ids.plan, "wip").catch(() => {});
+      }
+    }).catch(() => {});
+
     try {
       this.spawnStage(run, {
         kind: "codex-plan",
@@ -653,6 +666,10 @@ export class PipelineManager {
           // Auto-checkpoint after plan (before implement)
           this.autoCheckpoint(run, "after-plan");
 
+          // Taskr: plan done, implement starting
+          this.taskrUpdateStage(run, "plan", "done");
+          this.taskrUpdateStage(run, "implement", "wip");
+
           this.sendStatus(run, `✅ Codex plan complete. Launching Claude Code implementation...`);
           this.sendStatus(run, `🔨 Stage 2/3: Claude Code implementing...`);
           this.spawnStage(run, {
@@ -670,6 +687,10 @@ export class PipelineManager {
 
           // Auto-checkpoint after implement (before review)
           this.autoCheckpoint(run, "after-implement");
+
+          // Taskr: implement done, review starting
+          this.taskrUpdateStage(run, "implement", "done");
+          this.taskrUpdateStage(run, "review", "wip");
 
           this.sendStatus(run, `✅ Implementation complete. Launching Codex review...`);
           this.sendStatus(run, `🔍 Stage 3/3: Codex reviewing changes...`);
@@ -691,12 +712,23 @@ export class PipelineManager {
             return;
           }
 
+          // Taskr: add review verdict note
+          if (run.taskrTaskIds?.review) {
+            this.taskr.addStageNote(
+              run.taskrTaskIds.review,
+              `Review verdict: ${verdict.verdict}`,
+              verdict.summary || "(no summary)",
+            ).catch(() => {});
+          }
+
           if (verdict.verdict === "pass") {
+            this.taskrUpdateStage(run, "review", "done");
             this.finalizePipeline(run, "completed", undefined, verdict.summary);
             return;
           }
 
           if (verdict.verdict === "needs-human") {
+            this.taskrUpdateStage(run, "review", "done");
             this.finalizePipeline(run, "blocked", `Codex review requires human judgment.\n\nSummary: ${verdict.summary}`);
             return;
           }
@@ -728,6 +760,16 @@ export class PipelineManager {
           }
 
           const fixRound = iteration + 1;
+
+          // Taskr: create a dynamic fix-round subtask note
+          if (run.taskrTaskIds?.review) {
+            this.taskr.addStageNote(
+              run.taskrTaskIds.review,
+              `Fix round ${fixRound} starting`,
+              verdict.criticalIssues.join("; ") || verdict.summary,
+            ).catch(() => {});
+          }
+
           this.sendStatus(run, `🔴 Codex found critical issues. Launching fix round ${fixRound}...`);
           this.sendStatus(run, `🔨 Fix round ${fixRound}: Claude Code fixing issues...`);
           this.spawnStage(run, {
@@ -833,6 +875,9 @@ export class PipelineManager {
       this.activeStages.delete(run.id);
     }
 
+    // Taskr: mark remaining stages as skipped on failure, or all done on success
+    this.taskrFinalize(run, status).catch(() => {});
+
     // Persist terminal state before PR attempt
     this.persistState(run);
 
@@ -915,6 +960,57 @@ export class PipelineManager {
       const msg = err instanceof Error ? err.message : String(err);
       pipelineLog(`WARN: PR creation failed for pipeline ${run.id}: ${msg}`);
       return { error: msg };
+    }
+  }
+
+  // -- Taskr helpers (fire-and-forget, never throw) --
+
+  /**
+   * Update a Taskr stage by logical name. Silently skips if no task ID.
+   */
+  private taskrUpdateStage(
+    run: PipelineRun,
+    stage: "plan" | "implement" | "review",
+    status: "wip" | "done" | "skipped",
+  ): void {
+    const taskId = run.taskrTaskIds?.[stage];
+    if (!taskId) return;
+    this.taskr.updateStageStatus(taskId, status).catch(() => {});
+  }
+
+  /**
+   * On pipeline finalize, mark any un-started stages as skipped
+   * and add a final note.
+   */
+  private async taskrFinalize(
+    run: PipelineRun,
+    status: "completed" | "failed" | "blocked",
+  ): Promise<void> {
+    const ids = run.taskrTaskIds;
+    if (!ids) return;
+
+    // Figure out which stages were never reached and skip them
+    const stageKinds = run.stages.map((s) => s.kind);
+    if (!stageKinds.includes("codex-plan") && ids.plan) {
+      await this.taskr.updateStageStatus(ids.plan, "skipped").catch(() => {});
+    }
+    if (!stageKinds.includes("claude-implement") && ids.implement) {
+      await this.taskr.updateStageStatus(ids.implement, "skipped").catch(() => {});
+    }
+    if (!stageKinds.includes("codex-review") && ids.review) {
+      await this.taskr.updateStageStatus(ids.review, "skipped").catch(() => {});
+    }
+
+    // Add a final note to the last reached stage
+    const lastStage = run.stages[run.stages.length - 1];
+    const noteTaskId = ids.review || ids.implement || ids.plan;
+    if (noteTaskId) {
+      const emoji = status === "completed" ? "✅" : status === "blocked" ? "🟡" : "❌";
+      await this.taskr.addStageNote(
+        noteTaskId,
+        `${emoji} Pipeline ${status}`,
+        run.error || "Pipeline finished successfully",
+      ).catch(() => {});
     }
   }
 
