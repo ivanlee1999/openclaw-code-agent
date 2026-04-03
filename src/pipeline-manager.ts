@@ -47,7 +47,6 @@ const STAGE_TIMEOUT_MS = 1_200_000;
 // -- Stage prompt templates --
 
 const NO_QUESTIONS = "Do NOT ask questions. Make reasonable assumptions and proceed.";
-const ALWAYS_COMMIT = "After completing all changes, you MUST commit: `git add -A && git commit -m 'Implemented via OpenClaw pipeline'`";
 
 function codexPlanPrompt(task: string): string {
   return [
@@ -74,7 +73,6 @@ function claudeImplementPrompt(planOutput: string, task: string): string {
     "",
     "After implementing, verify your changes work correctly.",
     "",
-    ALWAYS_COMMIT,
     NO_QUESTIONS,
   ].join("\n");
 }
@@ -606,6 +604,23 @@ export class PipelineManager {
    */
   private ensureCommitted(run: PipelineRun, stageLabel: string): string | undefined {
     try {
+      // Pop any stashed changes first (Claude sometimes stashes instead of committing)
+      try {
+        const stashList = execSync("git stash list", {
+          cwd: run.workdir, encoding: "utf-8", timeout: 5_000,
+          stdio: ["pipe", "pipe", "pipe"],
+        }).trim();
+        if (stashList) {
+          pipelineLog(`ensureCommitted(${stageLabel}): found stashed changes, popping...`);
+          execSync("git stash pop", {
+            cwd: run.workdir, encoding: "utf-8", timeout: 10_000,
+            stdio: ["pipe", "pipe", "pipe"],
+          });
+        }
+      } catch {
+        // Stash pop may conflict — that's fine, changes are still in working tree
+      }
+
       // Stage any unstaged/untracked changes
       execSync("git add -A", {
         cwd: run.workdir, encoding: "utf-8", timeout: 10_000,
