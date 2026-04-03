@@ -48,6 +48,7 @@ describe("PipelineManager.spawnStage", () => {
     const run: any = {
       id: "pipe-1",
       name: "pipeline-name",
+      route: { provider: "discord", target: "channel:123" },
       prompt: "task",
       workdir: "/tmp",
       maxIterations: 1,
@@ -66,6 +67,12 @@ describe("PipelineManager.spawnStage", () => {
     // Verify the session config passed to spawn
     assert.equal(capturedConfig.permissionMode, "bypassPermissions");
     assert.equal(capturedConfig.codexApprovalPolicy, "never");
+
+    // Verify route metadata is passed to session spawn (regression: missing route caused
+    // "Cannot launch session: missing explicit route metadata" in production)
+    assert.ok(capturedConfig.route, "route must be passed to session spawn");
+    assert.ok(capturedConfig.route.provider, "route.provider required");
+    assert.ok(capturedConfig.route.target, "route.target required");
 
     // Stage should still be "starting" until startup completes
     assert.equal(run.stages[0]?.status, "starting");
