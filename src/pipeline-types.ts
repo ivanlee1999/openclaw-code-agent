@@ -53,4 +53,6 @@ export interface PipelineRun {
   originSessionKey?: string;
   /** Git SHA at the point the pipeline worktree was created. Used by review stages to diff all changes. */
   baseSha?: string;
+  /** Multi-repo connection ID. When set, the pipeline uses a shared connection workspace. */
+  connectionId?: string;
 }

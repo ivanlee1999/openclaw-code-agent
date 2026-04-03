@@ -177,6 +177,10 @@ export class Session extends EventEmitter {
   // AskUserQuestion intercept
   private readonly canUseTool?: CanUseToolCallback;
 
+  // Connection
+  readonly connectionId?: string;
+  readonly connectionWorkspace?: string;
+
   // Auto-respond counter
   autoRespondCount: number = 0;
 
@@ -220,6 +224,8 @@ export class Session extends EventEmitter {
       this.worktreePrTargetRepo = config.worktreePrTargetRepo;
     }
     this.canUseTool = config.canUseTool;
+    this.connectionId = config.connectionId;
+    this.connectionWorkspace = config.connectionWorkspace;
     this.notificationsEnabled = config.notificationsEnabled ?? true;
     this.startedAt = Date.now();
     this.abortController = new AbortController();

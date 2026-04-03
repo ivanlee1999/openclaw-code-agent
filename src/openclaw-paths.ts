@@ -24,3 +24,8 @@ export function resolveCodexAuthWorkspaceRoot(
 export function resolveCodexAuthLockDir(env: NodeJS.ProcessEnv): string {
   return join(resolveOpenclawHomeDir(env), "codex-auth.lock");
 }
+
+/** Resolve the root directory for multi-repo connection workspaces. */
+export function resolveConnectionsRoot(env: NodeJS.ProcessEnv): string {
+  return join(resolveOpenclawHomeDir(env), "worktrees", "connections");
+}

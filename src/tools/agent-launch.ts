@@ -1,6 +1,6 @@
 import { existsSync } from "fs";
 import { Type } from "@sinclair/typebox";
-import { sessionManager } from "../singletons";
+import { sessionManager, connectionsManager } from "../singletons";
 import { formatLaunchSummaryFromSession, type LaunchSummarySessionLike } from "../launch-summary";
 import {
   getDefaultHarnessName,
@@ -125,6 +125,9 @@ export function makeAgentLaunchTool(ctx: OpenClawPluginToolContext) {
       worktree_pr_target_repo: Type.Optional(
         Type.String({ description: "Target repository for cross-repo PRs (e.g. 'openai/codex' for fork-to-upstream workflow). If not set, auto-detected from 'upstream' remote or defaults to 'origin'." }),
       ),
+      connection_id: Type.Optional(
+        Type.String({ description: "Multi-repo connection ID. When provided, the session uses the connection's shared workspace as its working directory. Create connections with agent_connection(action='create', ...)." }),
+      ),
     }),
     async execute(_id: string, params: unknown) {
       if (!sessionManager) {
@@ -142,12 +145,23 @@ export function makeAgentLaunchTool(ctx: OpenClawPluginToolContext) {
       }
 
       try {
+        // Resolve connection workspace if connection_id is provided
+        let connectionWorkspace: string | undefined;
+        if (params.connection_id && connectionsManager) {
+          try {
+            const workspace = connectionsManager.prepareWorkspace(params.connection_id);
+            connectionWorkspace = workspace.rootDir;
+          } catch (err) {
+            return { content: [{ type: "text", text: `Error preparing connection workspace: ${errorMessage(err)}` }] };
+          }
+        }
+
         const resolution = resolveAgentLaunchRequest(params, ctx, sessionManager as any);
         if (resolution.kind !== "resolved") {
           return { content: [{ type: "text", text: resolution.text }] };
         }
         const {
-          workdir,
+          workdir: resolvedWorkdir,
           harness,
           resolvedModel,
           permissionMode,
@@ -185,6 +199,9 @@ export function makeAgentLaunchTool(ctx: OpenClawPluginToolContext) {
           };
         }
 
+        // Connection workspace overrides resolved workdir
+        const workdir = connectionWorkspace ?? resolvedWorkdir;
+
         const session = sessionManager.spawn({
           prompt: params.prompt,
           sessionIdOverride: !params.fork_session
@@ -213,9 +230,11 @@ export function makeAgentLaunchTool(ctx: OpenClawPluginToolContext) {
           originSessionKey,
           route,
           harness,
-          worktreeStrategy: params.worktree_strategy,
+          worktreeStrategy: params.connection_id ? "off" : params.worktree_strategy,
           worktreeBaseBranch: params.worktree_base_branch,
           worktreePrTargetRepo: params.worktree_pr_target_repo,
+          connectionId: params.connection_id,
+          connectionWorkspace,
         });
 
         const launchText = hasFormatLaunchResult(sessionManager)

@@ -35,6 +35,11 @@ export function listHarnesses(): string[] {
   return [...registry.keys()];
 }
 
+/** Remove all registered harnesses (for testing). */
+export function clearHarnesses(): void {
+  registry.clear();
+}
+
 // Register built-in harnesses
 registerHarness(new ClaudeCodeHarness());
 registerHarness(new CodexHarness());

@@ -48,6 +48,11 @@ import {
   isGitHubCLIAvailable,
   removeWorktree,
 } from "./worktree";
+import {
+  insertSession as dbInsertSession,
+  updateSession as dbUpdateSession,
+  upsertProject,
+} from "./database";
 
 
 const TERMINAL_STATUSES = new Set<SessionStatus>(["completed", "failed", "killed"]);
@@ -277,6 +282,37 @@ export class SessionManager {
     sessionIdRef = session.id; // bind late — canUseTool closure captures this ref
     this.registry.add(session);
     this.metrics.incrementLaunched();
+
+    // Record session in SQLite (best-effort — never block spawn on DB errors)
+    try {
+      let projectId: string | undefined;
+      if (config.workdir) {
+        // Skip worktree paths — pipeline-manager handles those via originalWorkdir
+        const isWorktree = config.workdir.includes("/.worktrees/") || config.workdir.includes("/openclaw-worktree-");
+        if (!isWorktree) {
+          const projectName = config.workdir.split("/").pop() ?? config.workdir;
+          projectId = upsertProject(projectName, config.workdir);
+        }
+      }
+      dbInsertSession({
+        id: session.id,
+        name: session.name,
+        harness: harnessName,
+        projectId,
+        status: "starting",
+        model: config.model,
+        prompt: config.prompt?.slice(0, 2000),
+        workdir: config.workdir,
+        worktreePath: session.worktreePath,
+        worktreeBranch: session.worktreeBranch,
+        permissionMode: config.permissionMode,
+        originChannel: config.originChannel,
+        originSessionKey: config.originSessionKey,
+      });
+    } catch {
+      // Silent — DB is supplementary
+    }
+
     return this.runtimeBootstrap.initializeSession(session, preparedLaunch, config, options);
   }
 
@@ -668,6 +704,17 @@ export class SessionManager {
     }
 
     this.store.persistTerminal(session);
+
+    // Update SQLite with terminal status and cost (best-effort)
+    try {
+      dbUpdateSession(session.id, {
+        status: session.status,
+        costUsd: session.costUsd ?? 0,
+        completedAt: new Date().toISOString(),
+      });
+    } catch {
+      // Silent — DB is supplementary
+    }
   }
 
   getMetrics(): SessionMetrics { return this.metrics.getMetrics(); }

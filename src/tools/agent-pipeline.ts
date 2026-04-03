@@ -1,5 +1,5 @@
 import { Type } from "@sinclair/typebox";
-import { pipelineManager } from "../singletons";
+import { pipelineManager, connectionsManager } from "../singletons";
 import type { OpenClawPluginToolContext } from "../types";
 
 interface AgentPipelineParams {
@@ -8,6 +8,7 @@ interface AgentPipelineParams {
   name?: string;
   worktree?: boolean;
   max_iterations?: number;
+  connection_id?: string;
 }
 
 function isAgentPipelineParams(value: unknown): value is AgentPipelineParams {
@@ -50,6 +51,11 @@ export function makeAgentPipelineTool(ctx: OpenClawPluginToolContext) {
           maximum: 10,
         }),
       ),
+      connection_id: Type.Optional(
+        Type.String({
+          description: "Multi-repo connection ID. When provided, the pipeline uses the connection's shared workspace.",
+        }),
+      ),
     }),
     async execute(_id: string, params: unknown) {
       if (!pipelineManager) {
@@ -75,12 +81,20 @@ export function makeAgentPipelineTool(ctx: OpenClawPluginToolContext) {
       }
 
       try {
+        // Resolve connection workspace if connection_id is provided
+        let effectiveWorkdir = params.workdir;
+        if (params.connection_id && connectionsManager) {
+          const workspace = connectionsManager.prepareWorkspace(params.connection_id);
+          effectiveWorkdir = workspace.rootDir;
+        }
+
         const run = pipelineManager.launch({
           prompt: params.prompt,
-          workdir: params.workdir,
+          workdir: effectiveWorkdir,
           name: params.name,
-          worktree: params.worktree,
+          worktree: params.connection_id ? false : params.worktree,
           maxIterations: params.max_iterations,
+          connectionId: params.connection_id,
           originChannel: ctx.channel || undefined,
           originThreadId: ctx.messageThreadId || undefined,
           originAgentId: ctx.agentId || undefined,

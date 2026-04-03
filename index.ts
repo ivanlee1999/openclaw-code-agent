@@ -18,6 +18,7 @@ import { makeGoalLaunchTool } from "./src/tools/goal-launch";
 import { makeGoalStatusTool } from "./src/tools/goal-status";
 import { makeGoalStopTool } from "./src/tools/goal-stop";
 import { makeAgentPipelineTool } from "./src/tools/agent-pipeline";
+import { makeAgentConnectionTool } from "./src/tools/agent-connection";
 import { createCallbackHandler } from "./src/callback-handler";
 import { registerAgentCommand } from "./src/commands/agent";
 import { registerAgentSessionsCommand } from "./src/commands/agent-sessions";
@@ -31,7 +32,10 @@ import { registerGoalStopCommand } from "./src/commands/goal-stop";
 import { GoalController } from "./src/goal-controller";
 import { SessionManager } from "./src/session-manager";
 import { PipelineManager } from "./src/pipeline-manager";
-import { setGoalController, setSessionManager, setPipelineManager } from "./src/singletons";
+import { OpenClawDatabase } from "./src/database";
+import { ConnectionsManager } from "./src/connections";
+import { resolveConnectionsRoot, resolveOpenclawHomeDir } from "./src/openclaw-paths";
+import { setGoalController, setSessionManager, setPipelineManager, setConnectionsManager } from "./src/singletons";
 import { setPluginRuntime } from "./src/runtime-store";
 import { setPluginConfig, pluginConfig } from "./src/config";
 import { definePluginEntry, type OpenClawPluginApi, type OpenClawPluginToolContext } from "./api";
@@ -116,6 +120,8 @@ function cleanupOrphanedWorktrees(sm: SessionManager): void {
 export function register(api: OpenClawPluginApi): void {
   let sm: SessionManager | null = null;
   let gc: GoalController | null = null;
+  let db: OpenClawDatabase | null = null;
+  let cm: ConnectionsManager | null = null;
   let cleanupInterval: ReturnType<typeof setInterval> | null = null;
   const registerTool = api.registerTool as (
     tool: (ctx: OpenClawPluginToolContext) => unknown,
@@ -140,6 +146,7 @@ export function register(api: OpenClawPluginApi): void {
   registerTool((ctx: OpenClawPluginToolContext) => makeGoalStatusTool(ctx), { optional: false });
   registerTool((ctx: OpenClawPluginToolContext) => makeGoalStopTool(ctx), { optional: false });
   registerTool((ctx: OpenClawPluginToolContext) => makeAgentPipelineTool(ctx), { optional: false });
+  registerTool((ctx: OpenClawPluginToolContext) => makeAgentConnectionTool(ctx), { optional: false });
 
   // Interactive handlers (shared action-token callbacks across chat transports)
   api.registerInteractiveHandler(createCallbackHandler("telegram"));
@@ -177,6 +184,19 @@ export function register(api: OpenClawPluginApi): void {
       setPipelineManager(pm);
       pm.resumePipelines();
 
+      // Initialize database and connections manager
+      try {
+        const dbPath = join(resolveOpenclawHomeDir(process.env), "openclaw.db");
+        db = new OpenClawDatabase(dbPath);
+        cm = new ConnectionsManager({
+          connectionsRoot: resolveConnectionsRoot(process.env),
+          db,
+        });
+        setConnectionsManager(cm);
+      } catch (err) {
+        console.warn(`[index] Failed to initialize connections database: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
       cleanupInterval = setInterval(() => sm!.cleanup(), 5 * 60 * 1000);
       cleanupInterval.unref?.();
     },
@@ -191,6 +211,9 @@ export function register(api: OpenClawPluginApi): void {
       setPluginRuntime(undefined);
       setGoalController(null);
       setSessionManager(null);
+      setConnectionsManager(null);
+      if (db) { try { db.close(); } catch {} db = null; }
+      cm = null;
     },
   });
 }

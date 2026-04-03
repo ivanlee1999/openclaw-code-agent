@@ -437,6 +437,7 @@ export function normalizePersistedEntry(raw: unknown): PersistedSessionInfo | un
     worktreeDismissedAt: toOptionalString(raw.worktreeDismissedAt),
     worktreeLifecycle,
     resumable: recoveredFromRunning ? true : raw.resumable === true,
+    connectionId: toOptionalString(raw.connectionId),
   };
 }
 

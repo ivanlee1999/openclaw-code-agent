@@ -314,6 +314,10 @@ export interface SessionConfig {
   backendRef?: SessionBackendRef;
   /** If false, suppress notifications for this session (e.g. pipeline sub-stages). */
   notificationsEnabled?: boolean;
+  /** Multi-repo connection ID. When set, the session uses a shared connection workspace. */
+  connectionId?: string;
+  /** Resolved connection workspace directory (set internally when connectionId is provided). */
+  connectionWorkspace?: string;
 }
 
 /** Plan-approval policy for orchestrator wake flows. */
@@ -446,6 +450,8 @@ export interface PersistedSessionInfo {
   worktreeDismissedAt?: string;
   worktreeLifecycle?: PersistedWorktreeLifecycle;
   resumable?: boolean;
+  /** Multi-repo connection ID associated with this session. */
+  connectionId?: string;
 }
 
 /** In-memory usage metrics shown by `agent_stats`. */

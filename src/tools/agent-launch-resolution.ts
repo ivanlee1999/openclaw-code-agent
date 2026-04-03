@@ -32,6 +32,7 @@ export interface AgentLaunchParams {
   worktree_strategy?: "off" | "manual" | "ask" | "delegate" | "auto-merge" | "auto-pr";
   worktree_base_branch?: string;
   worktree_pr_target_repo?: string;
+  connection_id?: string;
   agentId?: string;
 }
 

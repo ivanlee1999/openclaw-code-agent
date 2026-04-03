@@ -4,7 +4,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "esbuild index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --minify --external:openclaw --external:openclaw/plugin-sdk --external:openclaw/plugin-sdk/* --external:@anthropic-ai/claude-agent-sdk",
+    "build": "esbuild index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --minify --external:openclaw --external:openclaw/plugin-sdk --external:openclaw/plugin-sdk/* --external:@anthropic-ai/claude-agent-sdk --external:better-sqlite3",
     "test": "node scripts/run-tests.mjs",
     "test:serial": "node scripts/run-tests.mjs",
     "test:file": "node scripts/run-tests.mjs",
@@ -30,10 +30,12 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.89"
+    "@anthropic-ai/claude-agent-sdk": "^0.2.89",
+    "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {
     "@sinclair/typebox": "^0.34.48",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.5.0",
     "esbuild": "^0.27.4",
     "nanoid": "^5.1.7",
@@ -75,6 +77,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "better-sqlite3",
       "esbuild",
       "koffi",
       "protobufjs",

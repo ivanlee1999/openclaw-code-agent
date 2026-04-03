@@ -1,5 +1,6 @@
 import type { SessionManager } from "./session-manager";
 import type { GoalController } from "./goal-controller";
+import type { ConnectionsManager } from "./connections";
 
 export let sessionManager: SessionManager | null = null;
 export let goalController: GoalController | null = null;
@@ -21,4 +22,11 @@ export let pipelineManager: PipelineManager | null = null;
 /** Replace the shared PipelineManager reference used by the agent_pipeline tool. */
 export function setPipelineManager(pm: PipelineManager | null): void {
   pipelineManager = pm;
+}
+
+export let connectionsManager: ConnectionsManager | null = null;
+
+/** Replace the shared ConnectionsManager reference. */
+export function setConnectionsManager(cm: ConnectionsManager | null): void {
+  connectionsManager = cm;
 }

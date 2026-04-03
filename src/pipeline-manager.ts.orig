@@ -351,7 +351,6 @@ export class PipelineManager {
     name?: string;
     worktree?: boolean;
     maxIterations?: number;
-    connectionId?: string;
     originChannel?: string;
     originThreadId?: string | number;
     originAgentId?: string;
@@ -416,7 +415,6 @@ export class PipelineManager {
       originThreadId: params.originThreadId,
       originAgentId: params.originAgentId,
       originSessionKey: params.originSessionKey,
-      connectionId: params.connectionId,
     };
 
     this.runs.set(id, run);
