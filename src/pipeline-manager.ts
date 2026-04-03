@@ -47,6 +47,7 @@ const STAGE_TIMEOUT_MS = 1_200_000;
 // -- Stage prompt templates --
 
 const NO_QUESTIONS = "Do NOT ask questions. Make reasonable assumptions and proceed.";
+const ALWAYS_COMMIT = "After completing all changes, you MUST commit: `git add -A && git commit -m 'Implemented via OpenClaw pipeline'`";
 
 function codexPlanPrompt(task: string): string {
   return [
@@ -73,6 +74,7 @@ function claudeImplementPrompt(planOutput: string, task: string): string {
     "",
     "After implementing, verify your changes work correctly.",
     "",
+    ALWAYS_COMMIT,
     NO_QUESTIONS,
   ].join("\n");
 }
