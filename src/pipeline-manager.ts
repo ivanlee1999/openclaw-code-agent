@@ -360,6 +360,7 @@ export class PipelineManager {
     maxIterations?: number;
     connectionId?: string;
     originChannel?: string;
+  route?: { provider: string; target: string; threadId?: string | number; sessionKey?: string };
     originThreadId?: string | number;
     originAgentId?: string;
     originSessionKey?: string;
@@ -420,6 +421,7 @@ export class PipelineManager {
       stages: [],
       startedAt: Date.now(),
       originChannel: params.originChannel,
+      route: params.route,
       originThreadId: params.originThreadId,
       originAgentId: params.originAgentId,
       originSessionKey: params.originSessionKey,
@@ -496,6 +498,7 @@ export class PipelineManager {
       codexApprovalPolicy: spec.harness === "codex" ? "never" : undefined,
       reasoningEffort: resolveReasoningEffortForHarness(spec.harness),
       originChannel: run.originChannel,
+      route: run.route,
       originThreadId: run.originThreadId,
       originAgentId: run.originAgentId,
       originSessionKey: run.originSessionKey,

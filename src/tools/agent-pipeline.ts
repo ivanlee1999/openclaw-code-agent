@@ -1,5 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { pipelineManager, connectionsManager } from "../singletons";
+import { resolveSessionRoute } from "../config";
 import type { OpenClawPluginToolContext } from "../types";
 
 interface AgentPipelineParams {
@@ -99,6 +100,7 @@ export function makeAgentPipelineTool(ctx: OpenClawPluginToolContext) {
           originThreadId: ctx.messageThreadId || undefined,
           originAgentId: ctx.agentId || undefined,
           originSessionKey: ctx.sessionKey || undefined,
+          route: resolveSessionRoute(ctx, ctx.channel || undefined, ctx.sessionKey || undefined),
         });
 
         return {

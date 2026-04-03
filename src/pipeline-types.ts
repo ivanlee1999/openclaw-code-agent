@@ -48,6 +48,7 @@ export interface PipelineRun {
   completedAt?: number;
   error?: string;
   originChannel?: string;
+  route?: { provider: string; target: string; threadId?: string | number; sessionKey?: string };
   originThreadId?: string | number;
   originAgentId?: string;
   originSessionKey?: string;
