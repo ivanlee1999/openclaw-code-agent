@@ -274,4 +274,17 @@ export function resolveTargetRepo(repoDir: string, explicitRepo?: string): strin
   return undefined;
 }
 
+export function hasRemote(repoDir: string, remote: string): boolean {
+  try {
+    execFileSync("git", ["-C", repoDir, "remote", "get-url", remote], {
+      timeout: 5_000,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export { getWorktreeBaseDir };

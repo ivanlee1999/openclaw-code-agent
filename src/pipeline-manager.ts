@@ -22,7 +22,7 @@ import {
   pluginConfig,
   resolveReasoningEffortForHarness,
 } from "./config";
-import { isGitRepoWithRemote, createWorktree, removeWorktree, getBranchName as getBranchNameFromWorktree } from "./worktree";
+import { isGitRepoWithRemote, createWorktree, removeWorktree, pruneWorktrees, worktreeExists, hasRemote, getBranchName as getBranchNameFromWorktree } from "./worktree";
 import { execFileSync } from "child_process";
 import { generateSessionName } from "./format";
 import { inferBranchName, renameBranch } from "./branch-naming";
@@ -248,6 +248,12 @@ export class PipelineManager {
       this.runs.set(raw.id, raw);
 
       const lastStage = raw.stages[raw.stages.length - 1];
+
+      // Validate worktree still exists before resuming any stage
+      if (raw.worktreePath && !worktreeExists(raw.worktreePath)) {
+        this.finalizePipeline(raw, "failed", `Pipeline worktree was lost (possibly due to machine restart). Worktree path: ${raw.worktreePath}`);
+        continue;
+      }
 
       if (!lastStage) {
         // Pipeline was created but stage 1 never spawned
@@ -934,8 +940,15 @@ export class PipelineManager {
     // Clean up shared worktree (after PR creation so the branch can be pushed)
     if (run.worktreePath && run.originalWorkdir) {
       try {
-        removeWorktree(run.originalWorkdir, run.worktreePath);
-        pipelineLog(`Cleaned up worktree at ${run.worktreePath}`);
+        const destructive = status === "failed";
+        const removed = removeWorktree(run.originalWorkdir, run.worktreePath, { destructive });
+
+        if (removed) {
+          pruneWorktrees(run.originalWorkdir);
+          pipelineLog(`Cleaned up worktree at ${run.worktreePath}`);
+        } else {
+          pipelineLog(`WARN: Worktree cleanup skipped or failed for ${run.worktreePath}`);
+        }
       } catch (err) {
         pipelineLog(`WARN: Failed to clean up worktree: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -954,6 +967,12 @@ export class PipelineManager {
    */
   private createPullRequest(run: PipelineRun): { url?: string; error?: string } {
     if (!run.worktreePath) return {};
+
+    // Skip push and PR creation entirely if there's no origin remote
+    if (!hasRemote(run.worktreePath, "origin")) {
+      pipelineLog(`No origin remote for ${run.worktreePath}; skipping git push and PR creation`);
+      return {};
+    }
 
     try {
       execSync("git push -u origin HEAD", {

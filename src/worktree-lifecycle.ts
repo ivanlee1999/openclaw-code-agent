@@ -22,6 +22,13 @@ export function createWorktree(repoDir: string, sessionName: string): string {
 
     try {
       mkdirSync(candidatePath, { recursive: false });
+
+      // Never reuse a pre-existing branch — concurrent pipelines would collide
+      if (branchExists(repoDir, candidateBranch)) {
+        try { rmSync(candidatePath, { recursive: true, force: true }); } catch { /* ignore */ }
+        continue; // try next suffix
+      }
+
       worktreePath = candidatePath;
       branchName = candidateBranch;
       break;
@@ -37,21 +44,12 @@ export function createWorktree(repoDir: string, sessionName: string): string {
     throw new Error(`Failed to create unique worktree directory after ${maxRetries} attempts`);
   }
 
-  const branchAlreadyExists = branchExists(repoDir, branchName);
   try {
-    if (branchAlreadyExists) {
-      execFileSync("git", ["-C", repoDir, "worktree", "add", worktreePath, branchName], {
-        timeout: 15_000,
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-    } else {
-      execFileSync("git", ["-C", repoDir, "worktree", "add", "-b", branchName, worktreePath], {
-        timeout: 15_000,
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-    }
+    execFileSync("git", ["-C", repoDir, "worktree", "add", "-b", branchName, worktreePath], {
+      timeout: 15_000,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
   } catch (err) {
     try {
       rmSync(worktreePath, { recursive: true, force: true });
