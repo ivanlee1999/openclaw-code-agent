@@ -668,7 +668,8 @@ export class PipelineManager {
       }
 
       // Stage any unstaged/untracked changes
-      execSync("git add -A", {
+      // Exclude lockfiles — they get corrupted in worktrees and are not the source of truth here
+      execSync("git add -A -- . :!package-lock.json :!pnpm-lock.yaml :!yarn.lock", {
         cwd: run.workdir, encoding: "utf-8", timeout: 10_000,
         stdio: ["pipe", "pipe", "pipe"],
       });
