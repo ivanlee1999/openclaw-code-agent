@@ -35,6 +35,7 @@ import type {
   ReviewVerdict,
 } from "./pipeline-types";
 import { TaskrClient } from "./taskr-integration";
+import { buildWorktreeSystemPrompt } from "./session-bootstrap";
 
 const TERMINAL_STATUSES = new Set<SessionStatus>(["completed", "failed", "killed"]);
 
@@ -111,6 +112,27 @@ function claudeFixPrompt(reviewOutput: string): string {
     "",
     NO_QUESTIONS,
   ].join("\n");
+}
+
+/**
+ * Replace absolute paths under the original workspace with relative paths.
+ *
+ * When the Codex plan stage emits absolute paths (e.g. `/home/user/repo/src/file.ts`),
+ * those paths leak into the Claude implement/fix prompts. Claude then follows the
+ * absolute paths and writes files outside the worktree even though `cwd` is correct.
+ *
+ * This helper rewrites the exact `originalWorkdir` prefix to `.` so all paths become
+ * relative to the current working directory (the worktree).
+ */
+function relativizeOriginalWorkdirPaths(
+  text: string,
+  originalWorkdir?: string,
+): string {
+  if (!originalWorkdir) return text;
+  // Escape regex special characters in the path
+  const escaped = originalWorkdir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Replace both with and without trailing slash
+  return text.replace(new RegExp(`${escaped}/?`, "g"), "./");
 }
 
 // -- Review verdict parser --
@@ -323,7 +345,7 @@ export class PipelineManager {
       case "claude-implement": {
         const planOutput = this.findCompletedStageOutput(run, "codex-plan", 0);
         if (!planOutput) return undefined;
-        return { kind, harness: "claude-code", prompt: claudeImplementPrompt(planOutput, run.prompt), iteration: 0 };
+        return { kind, harness: "claude-code", prompt: claudeImplementPrompt(relativizeOriginalWorkdirPaths(planOutput, run.originalWorkdir), run.prompt), iteration: 0 };
       }
 
       case "codex-review":
@@ -333,7 +355,7 @@ export class PipelineManager {
         // Fix stages use the output from the preceding codex-review
         const reviewOutput = this.findCompletedStageOutput(run, "codex-review", iteration - 1);
         if (!reviewOutput) return undefined;
-        return { kind, harness: "claude-code", prompt: claudeFixPrompt(reviewOutput), iteration };
+        return { kind, harness: "claude-code", prompt: claudeFixPrompt(relativizeOriginalWorkdirPaths(reviewOutput, run.originalWorkdir)), iteration };
       }
     }
   }
@@ -493,9 +515,27 @@ export class PipelineManager {
     };
     run.stages.push(stage);
 
+    // For Claude stages running in a worktree, inject the worktree safety prompt.
+    // The pipeline creates its own worktree (worktreeStrategy: "off" prevents the
+    // session bootstrap from creating another one), but that also means the bootstrap
+    // never appends its worktree confinement instructions. Without these instructions,
+    // Claude can follow absolute paths from the plan and write outside the worktree.
+    const systemPrompt =
+      spec.harness === "claude-code" && run.worktreePath && run.originalWorkdir
+        ? buildWorktreeSystemPrompt(undefined, run.originalWorkdir, run.worktreePath)
+        : undefined;
+
+    pipelineLog(
+      `Spawning ${spec.kind} with workdir=${run.workdir}`
+      + (run.worktreePath ? ` worktreePath=${run.worktreePath}` : "")
+      + (run.originalWorkdir ? ` originalWorkdir=${run.originalWorkdir}` : "")
+      + (systemPrompt ? ` [worktree system prompt injected]` : ""),
+    );
+
     const sessionConfig: SessionConfig = {
       prompt: spec.prompt,
       workdir: run.workdir,
+      systemPrompt,
       name: `${run.name}-${spec.kind}${spec.iteration > 0 ? `-${spec.iteration}` : ""}`,
       harness: spec.harness,
       multiTurn: false,
@@ -698,10 +738,13 @@ export class PipelineManager {
 
           this.sendStatus(run, `✅ Codex plan complete. Launching Claude Code implementation...`);
           this.sendStatus(run, `🔨 Stage 2/3: Claude Code implementing...`);
+          // Relativize any absolute original-workdir paths in the plan output
+          // so Claude doesn't follow them to write outside the worktree.
+          const sanitizedPlan = relativizeOriginalWorkdirPaths(output, run.originalWorkdir);
           this.spawnStage(run, {
             kind: "claude-implement",
             harness: "claude-code",
-            prompt: claudeImplementPrompt(output, run.prompt),
+            prompt: claudeImplementPrompt(sanitizedPlan, run.prompt),
             iteration: 0,
           });
           break;
@@ -798,10 +841,12 @@ export class PipelineManager {
 
           this.sendStatus(run, `🔴 Codex found critical issues. Launching fix round ${fixRound}...`);
           this.sendStatus(run, `🔨 Fix round ${fixRound}: Claude Code fixing issues...`);
+          // Relativize absolute paths in the review output before feeding to Claude fix
+          const sanitizedReview = relativizeOriginalWorkdirPaths(output, run.originalWorkdir);
           this.spawnStage(run, {
             kind: "claude-fix",
             harness: "claude-code",
-            prompt: claudeFixPrompt(output),
+            prompt: claudeFixPrompt(sanitizedReview),
             iteration: fixRound,
           });
           break;

@@ -40,17 +40,25 @@ function prefersNativeCodexWorktrees(config: SessionConfig): boolean {
     }));
 }
 
-function appendWorktreeSystemPrompt(
+/**
+ * Build the worktree safety prompt text that instructs the agent to confine
+ * all edits to the worktree directory.
+ *
+ * Exported so both the normal session bootstrap and the pipeline manager can
+ * share the same wording — preventing divergence that caused pipeline stages
+ * to miss the worktree confinement instructions.
+ */
+export function buildWorktreeSystemPrompt(
   systemPrompt: string | undefined,
   originalWorkdir: string,
   worktreePath: string,
-  worktreeBranchName: string,
+  worktreeBranchName?: string,
 ): string {
-  const worktreeSuffix = [
+  const lines = [
     ``,
     `You are working in a git worktree.`,
     `Worktree path: ${worktreePath}`,
-    `Branch: ${worktreeBranchName}`,
+    ...(worktreeBranchName ? [`Branch: ${worktreeBranchName}`] : []),
     ``,
     `IMPORTANT: ALL file edits must be made within this worktree at ${worktreePath}.`,
     `Do NOT edit files directly in ${originalWorkdir} (the original workspace).`,
@@ -64,8 +72,8 @@ function appendWorktreeSystemPrompt(
     `When making changes, please note:`,
     `- Do NOT commit planning documents, investigation notes, or analysis artifacts to this branch`,
     `- Only commit actual code, configuration, tests, and documentation changes that were explicitly requested as part of the task`,
-  ].join("\n");
-  return (systemPrompt ?? "") + worktreeSuffix;
+  ];
+  return (systemPrompt ?? "") + lines.join("\n");
 }
 
 function restoreResumeWorktreeContext(
@@ -235,7 +243,7 @@ export function prepareSessionBootstrap(
     actualWorkdir,
     originalWorkdir,
     effectiveSystemPrompt: worktreePath && worktreeBranchName
-      ? appendWorktreeSystemPrompt(config.systemPrompt, originalWorkdir, worktreePath, worktreeBranchName)
+      ? buildWorktreeSystemPrompt(config.systemPrompt, originalWorkdir, worktreePath, worktreeBranchName)
       : config.systemPrompt,
     worktreePath,
     worktreeBranchName,

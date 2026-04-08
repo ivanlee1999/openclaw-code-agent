@@ -574,4 +574,166 @@ describe("PipelineManager — extended", () => {
       assert.equal(run.baseSha, "abc123def456");
     });
   });
+
+  describe("worktree system prompt injection", () => {
+    it("injects worktree system prompt for Claude stages when worktreePath exists", async () => {
+      let capturedConfig: any;
+      const session = makeFakeSession();
+
+      setSessionManager({
+        spawn(config: unknown) {
+          capturedConfig = config;
+          return session;
+        },
+        notifySession() {},
+      } as any);
+
+      const pm = new PipelineManager();
+      const run = makeRun({
+        worktreePath: "/tmp/worktrees/my-worktree",
+        originalWorkdir: "/home/user/repo",
+        workdir: "/tmp/worktrees/my-worktree",
+      });
+
+      (pm as any).spawnStage(run, {
+        kind: "claude-implement",
+        harness: "claude-code",
+        prompt: "implement something",
+        iteration: 0,
+      });
+
+      assert.ok(capturedConfig.systemPrompt, "systemPrompt must be set for Claude worktree stages");
+      assert.match(capturedConfig.systemPrompt, /ALL file edits must be made within this worktree/);
+      assert.match(capturedConfig.systemPrompt, /\/tmp\/worktrees\/my-worktree/);
+      assert.match(capturedConfig.systemPrompt, /Do NOT edit files directly in \/home\/user\/repo/);
+    });
+
+    it("does NOT inject worktree system prompt for Codex stages", async () => {
+      let capturedConfig: any;
+      const session = makeFakeSession();
+
+      setSessionManager({
+        spawn(config: unknown) {
+          capturedConfig = config;
+          return session;
+        },
+        notifySession() {},
+      } as any);
+
+      const pm = new PipelineManager();
+      const run = makeRun({
+        worktreePath: "/tmp/worktrees/my-worktree",
+        originalWorkdir: "/home/user/repo",
+        workdir: "/tmp/worktrees/my-worktree",
+      });
+
+      (pm as any).spawnStage(run, {
+        kind: "codex-review",
+        harness: "codex",
+        prompt: "review prompt",
+        iteration: 0,
+      });
+
+      assert.equal(capturedConfig.systemPrompt, undefined, "Codex stages should not get worktree system prompt");
+    });
+
+    it("does NOT inject worktree system prompt when worktreePath is absent", async () => {
+      let capturedConfig: any;
+      const session = makeFakeSession();
+
+      setSessionManager({
+        spawn(config: unknown) {
+          capturedConfig = config;
+          return session;
+        },
+        notifySession() {},
+      } as any);
+
+      const pm = new PipelineManager();
+      const run = makeRun({
+        // No worktreePath or originalWorkdir
+        workdir: "/home/user/repo",
+      });
+
+      (pm as any).spawnStage(run, {
+        kind: "claude-implement",
+        harness: "claude-code",
+        prompt: "implement something",
+        iteration: 0,
+      });
+
+      assert.equal(capturedConfig.systemPrompt, undefined, "Non-worktree Claude stages should not get worktree system prompt");
+    });
+  });
+
+  describe("path relativization in prompts", () => {
+    it("rewrites absolute original-workdir paths in plan output before Claude implement", async () => {
+      const capturedConfigs: any[] = [];
+      let stageIndex = 0;
+
+      const sessions = [
+        makeFakeSession({ id: "plan-session", output: [
+          "Plan: edit /home/user/repo/src/main.ts",
+          "Also change /home/user/repo/tests/main.test.ts",
+        ]}),
+        makeFakeSession({ id: "implement-session" }),
+      ];
+
+      setSessionManager({
+        spawn(config: unknown) {
+          capturedConfigs.push(config);
+          return sessions[stageIndex++];
+        },
+        notifySession() {},
+      } as any);
+
+      const pm = new PipelineManager();
+      const run = makeRun({
+        worktreePath: "/tmp/worktrees/my-worktree",
+        originalWorkdir: "/home/user/repo",
+        workdir: "/tmp/worktrees/my-worktree",
+      });
+
+      // Simulate: codex-plan completed, trigger onStageCompleted
+      const planOutput = "Plan: edit /home/user/repo/src/main.ts\nAlso change /home/user/repo/tests/main.test.ts";
+      (pm as any).onStageCompleted(run, "codex-plan", 0, planOutput);
+
+      // The implement stage should have been spawned with relativized paths
+      assert.ok(capturedConfigs.length >= 1, "implement stage should have been spawned");
+      const implementConfig = capturedConfigs[capturedConfigs.length - 1];
+      assert.ok(!implementConfig.prompt.includes("/home/user/repo/"), "Absolute paths should be relativized in implement prompt");
+      assert.ok(implementConfig.prompt.includes("./src/main.ts"), "Paths should be relative");
+      assert.ok(implementConfig.prompt.includes("./tests/main.test.ts"), "Paths should be relative");
+    });
+
+    it("does not modify prompts when no originalWorkdir is set", async () => {
+      const capturedConfigs: any[] = [];
+      let stageIndex = 0;
+
+      const sessions = [
+        makeFakeSession({ id: "plan-session" }),
+        makeFakeSession({ id: "implement-session" }),
+      ];
+
+      setSessionManager({
+        spawn(config: unknown) {
+          capturedConfigs.push(config);
+          return sessions[stageIndex++];
+        },
+        notifySession() {},
+      } as any);
+
+      const pm = new PipelineManager();
+      const run = makeRun({
+        // No worktreePath or originalWorkdir
+        workdir: "/home/user/repo",
+      });
+
+      const planOutput = "Plan: edit /home/user/repo/src/main.ts";
+      (pm as any).onStageCompleted(run, "codex-plan", 0, planOutput);
+
+      const implementConfig = capturedConfigs[capturedConfigs.length - 1];
+      assert.ok(implementConfig.prompt.includes("/home/user/repo/src/main.ts"), "Without originalWorkdir, paths should remain absolute");
+    });
+  });
 });
